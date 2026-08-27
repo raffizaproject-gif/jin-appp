@@ -60,6 +60,18 @@
     padding-top:calc(18px + env(safe-area-inset-top));
     padding-bottom:calc(18px + env(safe-area-inset-bottom));
   }
+  .brand-watermark{
+    flex-shrink:0;
+    text-align:center;
+    font-size:11px;
+    letter-spacing:5px;
+    padding:2px 0 8px;
+    color:var(--green-bright);
+    text-transform:uppercase;
+    text-shadow:0 0 8px rgba(57,255,106,0.55);
+    opacity:0.92;
+    user-select:none;
+  }
   .frame{
     border:1px solid var(--green-dim);
     border-radius:6px;
@@ -368,10 +380,11 @@
 <body>
 <canvas id="rain"></canvas>
 <div class="wrap">
+  <div class="brand-watermark">JIN VIXZAA</div>
   <div class="frame">
     <div class="titlebar">
       <span class="dot"></span>
-      <span class="label-full">JIN // TERMINAL ASISTEN — status:</span>
+      <span class="label-full">JIN TERMINAL ASISTEN — status:</span>
       <span id="statusTxt">siap</span>
       <button id="voiceModeBtn" class="voice-toggle" type="button" title="Saat aktif, balasan Jin otomatis dibacakan sebagai suara">🎙️ <span class="vm-label">Voice Mode: </span><span id="vmState">OFF</span></button>
       <button id="menuBtn" type="button" title="Buka menu perintah & tugas">☰</button>
@@ -384,7 +397,7 @@
      |  |
     /|  |\
 </div>
-    <div class="sub">Ketik perintah bebas untuk ngobrol, atau gunakan perintah cepat di panel kanan. Contoh: <code style="color:var(--amber)">/tugas beli galon</code></div>
+    <div class="sub">Ketik perintah bebas untuk ngobrol dengan JIN, atau gunakan perintah cepat di panel kanan.</div>
     <div class="body">
       <div class="chat-col">
         <div class="log" id="log">
@@ -406,12 +419,6 @@
         </div>
       </div>
       <div class="side">
-        <h3>Perintah Cepat</h3>
-        <ul class="cmd-list" id="cmdList">
-          <li><code>/tugas [teks]</code> — catat tugas baru</li>
-          <li><code>/hitung [ekspresi]</code> — kalkulator, mis. /hitung 12*8</li>
-          <li><code>/bersihkan</code> — kosongkan obrolan</li>
-        </ul>
         <h3>Daftar Tugas</h3>
         <ul id="todos"></ul>
       </div>
@@ -539,13 +546,22 @@ function resetTtsGroup(group){
   group.stopBtn.style.display = 'none';
 }
 
+// Menghapus semua karakter emoji dari teks supaya suara TTS tidak
+// mengucapkan nama emoji atau bunyi aneh saat membaca balasan Jin.
+function stripEmojis(str){
+  return str
+    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1F5FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function speakText(text, group){
   if(!ttsSupported) return;
   // Hentikan ucapan sebelumnya (kalau ada) supaya suara tidak tumpang tindih
   window.speechSynthesis.cancel();
   if(currentTtsGroup && currentTtsGroup !== group) resetTtsGroup(currentTtsGroup);
 
-  const utter = new SpeechSynthesisUtterance(text);
+  const utter = new SpeechSynthesisUtterance(stripEmojis(text));
   utter.lang = 'id-ID';
   utter.rate = 1;
   utter.pitch = 1;
@@ -802,23 +818,16 @@ async function sendVoiceNote(blob){
 }
 
 // --- Dynamic commands (dari folder commands/ di server) ---
+// Daftar perintah tetap berfungsi saat diketik langsung, tapi tidak
+// ditampilkan lagi di panel (supaya tidak ada teks berawalan "/").
 let dynamicCommands = [];
 async function loadCommands(){
   try{
     const r = await fetch('/api/commands');
     dynamicCommands = await r.json();
-    renderCommandList();
   }catch(e){
     console.error('Gagal memuat daftar command:', e);
   }
-}
-function renderCommandList(){
-  const listEl = document.getElementById('cmdList');
-  dynamicCommands.forEach(c => {
-    const li = document.createElement('li');
-    li.innerHTML = '<code>'+escapeHtml(c.trigger)+' [teks]</code> — '+escapeHtml(c.description);
-    listEl.appendChild(li);
-  });
 }
 loadCommands();
 
@@ -852,7 +861,7 @@ function buildVideoCard(result){
   dl.target = '_blank';
   dl.rel = 'noopener noreferrer';
   dl.download = (result.title || 'video') + '.mp4';
-  dl.textContent = 'Buka / Download';
+  dl.textContent = 'Buka atau Download';
   card.appendChild(titleDiv);
   card.appendChild(video);
   card.appendChild(dl);
@@ -906,7 +915,7 @@ async function callJin(userText, opts){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        system: "Kamu adalah 'Jin', asisten AI bergaya jin/genie dalam terminal hacker hijau. Kepribadianmu ramah, sedikit dramatis ala jin dari lampu ajaib, tapi jawabanmu selalu jujur, akurat, dan berguna — tidak pernah membantu aktivitas ilegal, penipuan, atau social engineering terhadap orang lain. Jawab dalam Bahasa Indonesia, singkat dan jelas, boleh sedikit gaya 'jin' di awal kalimat sesekali tapi jangan berlebihan. Kamu punya kemampuan download video TikTok lewat tool 'download_tiktok'. Kalau user minta download video TikTok tapi belum kasih link, minta link-nya dulu dengan ramah. Begitu user memberi link TikTok yang valid, LANGSUNG panggil tool download_tiktok (jangan tanya-tanya lagi, jangan minta konfirmasi tambahan). Setelah tool berhasil, balas singkat dan antusias, contoh gayanya: 'Oke dapet, bos! Videonya sudah kukirim di bawah ini.' — tanpa menyebutkan link video di teks (videonya akan otomatis tampil sebagai player di bawah pesanmu). Kalau tool gagal, sampaikan apa adanya dan sarankan coba lagi.",
+        system: "Kamu adalah 'Jin', asisten AI bergaya jin/genie dalam terminal hacker hijau bernama JIN VIXZAA. Kepribadianmu ramah, sedikit dramatis ala jin dari lampu ajaib, tapi jawabanmu selalu jujur, akurat, dan berguna — tidak pernah membantu aktivitas ilegal, penipuan, atau social engineering terhadap orang lain. Jawab dalam Bahasa Indonesia, singkat dan jelas, boleh sedikit gaya jin di awal kalimat sesekali tapi jangan berlebihan. Jangan pernah menggunakan tanda kutip dua (\\\") di dalam jawabanmu. Jika ada yang bertanya siapa yang membuatmu atau menciptakanmu atau siapa developernya, jawab persis: saya di buat oleh RAFFIZA DWI FEBRIANSAH developer dari kota mojokerto jawa timur. Kamu punya kemampuan download video TikTok lewat tool 'download_tiktok'. Kalau user minta download video TikTok tapi belum kasih link, minta link-nya dulu dengan ramah. Begitu user memberi link TikTok yang valid, LANGSUNG panggil tool download_tiktok (jangan tanya-tanya lagi, jangan minta konfirmasi tambahan). Setelah tool berhasil, balas singkat dan antusias, contoh gayanya: Oke dapet, bos! Videonya sudah kukirim di bawah ini. — tanpa menyebutkan link video di teks (videonya akan otomatis tampil sebagai player di bawah pesanmu). Kalau tool gagal, sampaikan apa adanya dan sarankan coba lagi.",
         messages: history
       })
     });
@@ -915,7 +924,8 @@ async function callJin(userText, opts){
       throw new Error((data && data.error && (data.error.error?.message || JSON.stringify(data.error))) || 'Gagal menghubungi server.');
     }
     const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
-    const reply = textBlocks.join('\n').trim() || 'Maaf, aku tidak menerima jawaban dari alam gaib (API). Coba lagi.';
+    let reply = textBlocks.join('\n').trim() || 'Maaf, aku tidak menerima jawaban dari alam gaib (API). Coba lagi.';
+    reply = reply.replace(/["“”]/g, ''); // jaring pengaman: hapus tanda petik dua dari balasan AI
     history.push({role:'assistant', content: reply});
     const jinDiv = addMsg('jin', reply);
     if(data.video && data.video.type === 'video'){
