@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050a06">
+<title>JIN — Asisten Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#050a06;
+    --panel:#0a140b;
+    --green-bright:#39ff6a;
+    --green-mid:#1fae4d;
+    --green-dim:#0f5c29;
+    --amber:#ffb020;
+    --text:#c9ffd6;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html{
+    height:-webkit-fill-available;
+    -webkit-text-size-adjust:100%;
+    text-size-adjust:100%;
+  }
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--bg);
+    font-family:'JetBrains Mono',monospace;
+    color:var(--text);
+    overflow:hidden;
+    overscroll-behavior:none;
+    position:fixed;
+    inset:0;
+    width:100%;
+  }
+  /* #rain and .wrap are positioned/sized entirely by JS (syncViewport) so
+     they track window.visualViewport exactly. This is what stops the whole
+     layout from being shoved upward when the on-screen keyboard opens —
+     only the input bar sits above the keyboard, everything else stays put,
+     the same way Claude's mobile app behaves. The values below are just a
+     safe first-paint fallback before JS runs. */
+  #rain{
+    position:fixed;top:0;left:0;z-index:0;opacity:0.35;
+  }
+  .wrap{
+    position:fixed;
+    top:0;left:0;right:0;
+    z-index:1;
+    height:100vh;
+    height:100dvh;
+    display:flex;
+    flex-direction:column;
+    max-width:920px;
+    margin:0 auto;
+    padding:18px;
+    padding-top:calc(18px + env(safe-area-inset-top));
+    padding-bottom:calc(18px + env(safe-area-inset-bottom));
+  }
+  .frame{
+    border:1px solid var(--green-dim);
+    border-radius:6px;
+    background:rgba(5,10,6,0.86);
+    box-shadow:0 0 24px rgba(57,255,106,0.08), inset 0 0 40px rgba(0,0,0,0.6);
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    backdrop-filter:blur(2px);
+  }
+  .titlebar{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 14px;
+    border-bottom:1px solid var(--green-dim);
+    background:linear-gradient(180deg, rgba(31,174,77,0.08), transparent);
+    font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--green-mid);
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green-mid);box-shadow:0 0 6px var(--green-mid);}
+  .ascii{
+    padding:14px 18px 4px;
+    color:var(--green-bright);
+    font-size:11px;line-height:1.15;
+    white-space:pre;
+    text-shadow:0 0 8px rgba(57,255,106,0.5);
+    opacity:0.9;
+  }
+  .sub{
+    padding:0 18px 10px;
+    font-size:12px;
+    color:var(--green-mid);
+    border-bottom:1px dashed var(--green-dim);
+  }
+  .body{
+    flex:1;
+    display:flex;
+    min-height:0;
+  }
+  .chat-col{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    min-width:0;
+    border-right:1px solid var(--green-dim);
+  }
+  .log{
+    flex:1;
+    overflow-y:auto;
+    padding:14px 18px;
+    font-size:13.5px;
+    line-height:1.55;
+  }
+  .log::-webkit-scrollbar{width:8px;}
+  .log::-webkit-scrollbar-thumb{background:var(--green-dim);border-radius:4px;}
+  .msg{margin-bottom:14px; white-space:pre-wrap; word-break:break-word;}
+  .msg .tag{color:var(--green-mid); font-weight:700;}
+  .msg.jin .tag{color:var(--green-bright); text-shadow:0 0 6px rgba(57,255,106,0.6);}
+  .msg.user .tag{color:var(--amber);}
+  .msg.sys{color:var(--green-dim); font-style:italic;}
+  .typing{color:var(--green-mid); font-size:12px; padding:0 18px 8px; min-height:16px;}
+  .inputbar{
+    display:flex;align-items:center;gap:8px;
+    border-top:1px solid var(--green-dim);
+    padding:10px 14px;
+    background:rgba(15,92,41,0.06);
+  }
+  .prompt-sym{color:var(--green-bright); font-weight:700;}
+  #inp{
+    flex:1;
+    min-width:0;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--text);
+    font-family:inherit;
+    font-size:16px;
+    caret-color:var(--green-bright);
+  }
+  #send{
+    background:transparent;
+    border:1px solid var(--green-dim);
+    color:var(--green-bright);
+    font-family:inherit;
+    font-size:12px;
+    letter-spacing:1px;
+    padding:6px 12px;
+    border-radius:4px;
+    cursor:pointer;
+    text-transform:uppercase;
+    touch-action:manipulation;
+    flex-shrink:0;
+  }
+  #send:hover{background:rgba(57,255,106,0.1); border-color:var(--green-bright);}
+  #send:disabled{opacity:0.4; cursor:not-allowed;}
+  .side{
+    width:250px;
+    display:flex;
+    flex-direction:column;
+    padding:14px 16px;
+    font-size:12.5px;
+    overflow-y:auto;
+  }
+  .side h3{
+    margin:0 0 8px;
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--green-mid);
+    border-bottom:1px solid var(--green-dim);
+    padding-bottom:6px;
+  }
+  .cmd-list{margin:0 0 18px; padding:0; list-style:none;}
+  .cmd-list li{margin-bottom:6px; color:var(--text);}
+  .cmd-list code{color:var(--amber);}
+  #todos{margin:0; padding:0; list-style:none;}
+  #todos li{
+    padding:6px 8px;
+    border:1px solid var(--green-dim);
+    border-radius:4px;
+    margin-bottom:6px;
+    display:flex;
+    justify-content:space-between;
+    gap:6px;
+    align-items:center;
+  }
+  #todos li button{
+    background:transparent;border:none;color:var(--green-dim);cursor:pointer;font-size:14px;
+  }
+  #todos li button:hover{color:var(--amber);}
+  .empty{color:var(--green-dim); font-style:italic;}
+  .video-card{
+    margin-top:8px;
+    border:1px solid var(--green-dim);
+    border-radius:6px;
+    padding:10px;
+    max-width:320px;
+    background:rgba(31,174,77,0.05);
+  }
+  .video-card video{width:100%;border-radius:4px;display:block;margin-bottom:8px;background:#000;}
+  .video-card .vtitle{font-size:12px;color:var(--text);margin-bottom:6px;word-break:break-word;}
+  .video-card a.dl{
+    display:inline-block;
+    font-size:12px;
+    color:var(--bg);
+    background:var(--green-bright);
+    padding:5px 10px;
+    border-radius:4px;
+    text-decoration:none;
+    font-weight:700;
+  }
+  .video-card a.dl:hover{opacity:0.85;}
+
+  /* --- Fitur Voice / VN --- */
+  .voice-toggle{
+    margin-left:auto;
+    display:flex;align-items:center;gap:6px;
+    font-size:11px;letter-spacing:0.5px;
+    color:var(--green-mid);
+    cursor:pointer;user-select:none;
+    border:1px solid var(--green-dim);
+    border-radius:4px;
+    padding:4px 9px;
+    background:transparent;
+    font-family:inherit;
+    text-transform:none;
+    white-space:nowrap;
+    touch-action:manipulation;
+    flex-shrink:0;
+  }
+  .voice-toggle:hover{border-color:var(--green-bright);}
+  .voice-toggle.active{
+    color:var(--bg);
+    background:var(--green-bright);
+    border-color:var(--green-bright);
+    font-weight:700;
+  }
+  #micBtn{
+    background:transparent;
+    border:1px solid var(--green-dim);
+    color:var(--green-bright);
+    font-size:15px;
+    padding:5px 10px;
+    border-radius:4px;
+    cursor:pointer;
+    line-height:1;
+    flex-shrink:0;
+    touch-action:manipulation;
+  }
+  #micBtn:hover{background:rgba(57,255,106,0.1); border-color:var(--green-bright);}
+  #micBtn:disabled{opacity:0.35;cursor:not-allowed;}
+  #micBtn.recording{
+    color:#ff5c5c;border-color:#ff5c5c;
+    animation:micPulse 1.1s infinite;
+  }
+  @keyframes micPulse{
+    0%{box-shadow:0 0 0 0 rgba(255,92,92,0.5);}
+    70%{box-shadow:0 0 0 9px rgba(255,92,92,0);}
+    100%{box-shadow:0 0 0 0 rgba(255,92,92,0);}
+  }
+  .record-bar{
+    display:flex;align-items:center;gap:10px;
+    border-top:1px solid var(--green-dim);
+    padding:10px 14px;
+    background:rgba(255,92,92,0.07);
+  }
+  .record-dot{
+    width:10px;height:10px;border-radius:50%;flex-shrink:0;
+    background:#ff5c5c;
+    box-shadow:0 0 6px #ff5c5c;
+    animation:recordBlink 1s infinite;
+  }
+  @keyframes recordBlink{50%{opacity:0.25;}}
+  .record-time{font-size:13px;color:var(--text);min-width:46px;font-weight:700;}
+  .record-label{font-size:12px;color:#ff9d9d;flex:1;}
+  .record-btn{
+    background:transparent;
+    font-family:inherit;font-size:11px;letter-spacing:1px;
+    padding:5px 11px;border-radius:4px;cursor:pointer;text-transform:uppercase;
+    flex-shrink:0;
+  }
+  .record-btn.stop{color:var(--green-bright); border:1px solid var(--green-bright);}
+  .record-btn.stop:hover{background:rgba(57,255,106,0.12);}
+  .record-btn.cancel{color:#ff9d9d; border:1px solid #ff5c5c;}
+  .record-btn.cancel:hover{background:rgba(255,92,92,0.12);}
+  .tts-controls{
+    display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle;
+    white-space:nowrap;
+  }
+  .tts-btn{
+    background:transparent;border:1px solid var(--green-dim);
+    color:var(--green-mid);font-size:11px;
+    padding:1px 7px;border-radius:4px;cursor:pointer;line-height:1.5;
+    font-family:inherit;
+  }
+  .tts-btn:hover{color:var(--green-bright);border-color:var(--green-bright);}
+  .vn-tag{color:var(--amber); font-size:11px; margin-right:2px; font-style:italic;}
+
+  /* --- Menu (hamburger) untuk buka panel di HP --- */
+  #menuBtn{
+    display:none;
+    background:transparent;
+    border:1px solid var(--green-dim);
+    color:var(--green-bright);
+    font-size:14px;
+    padding:5px 9px;
+    border-radius:4px;
+    cursor:pointer;
+    line-height:1;
+    touch-action:manipulation;
+    flex-shrink:0;
+  }
+  #drawerBackdrop{
+    display:none;
+    position:fixed;inset:0;
+    background:rgba(0,0,0,0.55);
+    z-index:20;
+  }
+  #drawerBackdrop.open{display:block;}
+
+  /* --- Responsive: tablet & bawah --- */
+  @media (max-width:720px){
+    .wrap{padding:0; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); max-width:100%;}
+    .frame{border-left:none; border-right:none; border-radius:0; border-top:none;}
+    #menuBtn{display:inline-flex; align-items:center; justify-content:center;}
+    .side{
+      display:flex;
+      position:fixed;
+      top:0; right:0;
+      height:100%; height:100dvh;
+      width:min(78vw, 300px);
+      background:var(--panel);
+      border-left:1px solid var(--green-dim);
+      z-index:21;
+      transform:translateX(100%);
+      transition:transform 0.22s ease;
+      padding-top:calc(14px + env(safe-area-inset-top));
+      padding-bottom:calc(14px + env(safe-area-inset-bottom));
+      box-shadow:-8px 0 24px rgba(0,0,0,0.4);
+    }
+    .side.open{transform:translateX(0);}
+  }
+
+  /* --- HP kecil: sederhanakan supaya tidak membingungkan --- */
+  @media (max-width:480px){
+    .titlebar{
+      padding:10px 12px;
+      font-size:10.5px;
+      gap:8px;
+    }
+    .titlebar .label-full{display:none;}
+    .ascii{display:none;}
+    .sub{
+      padding:8px 12px;
+      font-size:11px;
+    }
+    .voice-toggle{margin-left:0;}
+    .voice-toggle .vm-label{display:none;}
+    .record-label{display:none;}
+    .log{padding:12px 12px; font-size:14px;}
+    .inputbar{padding:8px 10px; gap:6px;}
+    #send{padding:8px 10px; font-size:11px;}
+    .video-card{max-width:100%;}
+  }
+</style>
+</head>
+<body>
+<canvas id="rain"></canvas>
+<div class="wrap">
+  <div class="frame">
+    <div class="titlebar">
+      <span class="dot"></span>
+      <span class="label-full">JIN // TERMINAL ASISTEN — status:</span>
+      <span id="statusTxt">siap</span>
+      <button id="voiceModeBtn" class="voice-toggle" type="button" title="Saat aktif, balasan Jin otomatis dibacakan sebagai suara">🎙️ <span class="vm-label">Voice Mode: </span><span id="vmState">OFF</span></button>
+      <button id="menuBtn" type="button" title="Buka menu perintah & tugas">☰</button>
+    </div>
+<div class="ascii">    .-''-.
+   /      \
+  |  (o)(o) |    JIN — panggil, lalu perintahkan.
+   \  __  /
+    '-..-'
+     |  |
+    /|  |\
+</div>
+    <div class="sub">Ketik perintah bebas untuk ngobrol, atau gunakan perintah cepat di panel kanan. Contoh: <code style="color:var(--amber)">/tugas beli galon</code></div>
+    <div class="body">
+      <div class="chat-col">
+        <div class="log" id="log">
+          <div class="msg jin"><span class="tag">JIN&gt;</span> Aku sudah bangun dari lampu. Perintahkan apa saja lewat obrolan — aku akan menjawab, menghitung, atau mencatat tugas untukmu.</div>
+        </div>
+        <div class="typing" id="typing"></div>
+        <div class="inputbar" id="inputBar">
+          <span class="prompt-sym">&gt;</span>
+          <input id="inp" type="text" placeholder="Ketik perintah atau pertanyaan..." autocomplete="off"/>
+          <button id="micBtn" type="button" title="Rekam pesan suara (VN)">🎙️</button>
+          <button id="send">Kirim</button>
+        </div>
+        <div class="record-bar" id="recordBar" style="display:none;">
+          <span class="record-dot"></span>
+          <span class="record-time" id="recordTime">00:00</span>
+          <span class="record-label">Merekam suara... mikrofon aktif</span>
+          <button class="record-btn cancel" id="cancelRecordBtn" type="button">✕ Batal</button>
+          <button class="record-btn stop" id="stopRecordBtn" type="button">■ Stop</button>
+        </div>
+      </div>
+      <div class="side">
+        <h3>Perintah Cepat</h3>
+        <ul class="cmd-list" id="cmdList">
+          <li><code>/tugas [teks]</code> — catat tugas baru</li>
+          <li><code>/hitung [ekspresi]</code> — kalkulator, mis. /hitung 12*8</li>
+          <li><code>/bersihkan</code> — kosongkan obrolan</li>
+        </ul>
+        <h3>Daftar Tugas</h3>
+        <ul id="todos"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="drawerBackdrop"></div>
+
+<script>
+// --- Sinkronisasi viewport (anti "loncat" saat keyboard HP muncul) ---
+// Semua browser mobile mengubah ukuran (dan kadang menggeser) visualViewport
+// saat keyboard muncul, tapi window.innerHeight/scroll dokumen sering ikut
+// bergeser juga kalau elemen tidak position:fixed — itu yang membuat header
+// "hilang" ke atas. Dengan wrap & canvas di-fixed lalu ukurannya kita kunci
+// manual ke visualViewport, hanya keyboard yang naik; layout tetap diam,
+// mirip perilaku aplikasi Claude di HP.
+const wrapEl = document.querySelector('.wrap');
+const canvas = document.getElementById('rain');
+const ctx = canvas.getContext('2d');
+const chars = 'アイウエオカキクケコサシスセソ0123456789JIN'.split('');
+const fontSize = 15;
+let columns = 1;
+let drops = [1];
+
+function syncViewport(){
+  const vv = window.visualViewport;
+  const width = Math.max(1, Math.round(vv ? vv.width : window.innerWidth));
+  const height = Math.max(1, Math.round(vv ? vv.height : window.innerHeight));
+  const top = vv ? vv.offsetTop : 0;
+
+  document.documentElement.style.setProperty('--app-height', height + 'px');
+
+  wrapEl.style.height = height + 'px';
+  wrapEl.style.top = top + 'px';
+
+  canvas.style.top = top + 'px';
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+
+  if(canvas.width !== width || canvas.height !== height){
+    canvas.width = width;
+    canvas.height = height;
+    const newColumns = Math.max(1, Math.floor(width / fontSize));
+    // Pertahankan progres tetesan yang sudah ada, tambah/kurangi kolom saja,
+    // supaya animasi tidak "reset total" tiap kali keyboard buka/tutup.
+    if(newColumns > columns){
+      for(let i = columns; i < newColumns; i++) drops.push(1);
+    }else{
+      drops.length = newColumns;
+    }
+    columns = newColumns;
+  }
+
+  // Saat keyboard sedang membuka/menutup, browser kadang tetap menggeser
+  // scroll dokumen sedikit — paksa kembali ke 0 supaya .wrap yang fixed
+  // benar-benar diam di posisinya.
+  if(window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+}
+
+syncViewport();
+window.addEventListener('resize', syncViewport);
+window.addEventListener('orientationchange', syncViewport);
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', syncViewport);
+}
+
+// --- Matrix rain background ---
+function draw(){
+  if(!columns || canvas.width < 1 || canvas.height < 1) return;
+  ctx.fillStyle='rgba(5,10,6,0.08)';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#1fae4d';
+  ctx.font=fontSize+'px monospace';
+  for(let i=0;i<drops.length;i++){
+    const text = chars[Math.floor(Math.random()*chars.length)];
+    ctx.fillText(text, i*fontSize, drops[i]*fontSize);
+    if(drops[i]*fontSize > canvas.height && Math.random() > 0.975) drops[i]=0;
+    drops[i]++;
+  }
+}
+setInterval(draw, 50);
+
+// --- State ---
+let todos = [];
+let history = []; // conversation history for API
+
+const log = document.getElementById('log');
+const inp = document.getElementById('inp');
+const sendBtn = document.getElementById('send');
+const typing = document.getElementById('typing');
+const todosEl = document.getElementById('todos');
+const statusTxt = document.getElementById('statusTxt');
+
+function addMsg(who, text, opts){
+  opts = opts || {};
+  const div = document.createElement('div');
+  div.className = 'msg ' + who;
+  const tagText = who === 'jin' ? 'JIN>' : who === 'user' ? 'ANDA>' : '';
+  const vnBadge = opts.viaVoice ? '<span class="vn-tag">[via suara 🎙️]</span> ' : '';
+  div.innerHTML = (tagText ? '<span class="tag">'+tagText+'</span> ' : '') + vnBadge + escapeHtml(text);
+  log.appendChild(div);
+  // Tambahkan kontrol Text-to-Speech (Play/Pause/Stop) pada balasan Jin
+  if(who === 'jin' && ttsSupported && text){
+    div.appendChild(buildTtsControls(text));
+  }
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// --- Text-to-Speech (AI membalas dengan suara) ---
+// Menggunakan Web Speech API bawaan browser (gratis, tidak butuh API tambahan).
+const ttsSupported = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+let currentTtsGroup = null;
+
+function resetTtsGroup(group){
+  if(!group) return;
+  group.playBtn.style.display = '';
+  group.playBtn.textContent = '🔊';
+  group.pauseBtn.style.display = 'none';
+  group.pauseBtn.textContent = '⏸';
+  group.stopBtn.style.display = 'none';
+}
+
+function speakText(text, group){
+  if(!ttsSupported) return;
+  // Hentikan ucapan sebelumnya (kalau ada) supaya suara tidak tumpang tindih
+  window.speechSynthesis.cancel();
+  if(currentTtsGroup && currentTtsGroup !== group) resetTtsGroup(currentTtsGroup);
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'id-ID';
+  utter.rate = 1;
+  utter.pitch = 1;
+  utter.onend = () => { resetTtsGroup(group); currentTtsGroup = null; };
+  utter.onerror = () => { resetTtsGroup(group); currentTtsGroup = null; };
+
+  currentTtsGroup = group;
+  group.playBtn.style.display = 'none';
+  group.pauseBtn.style.display = '';
+  group.stopBtn.style.display = '';
+  window.speechSynthesis.speak(utter);
+}
+
+function buildTtsControls(text){
+  const wrap = document.createElement('span');
+  wrap.className = 'tts-controls';
+
+  const playBtn = document.createElement('button');
+  playBtn.type = 'button';
+  playBtn.className = 'tts-btn';
+  playBtn.title = 'Dengarkan balasan ini';
+  playBtn.textContent = '🔊';
+
+  const pauseBtn = document.createElement('button');
+  pauseBtn.type = 'button';
+  pauseBtn.className = 'tts-btn';
+  pauseBtn.title = 'Jeda / lanjutkan';
+  pauseBtn.textContent = '⏸';
+  pauseBtn.style.display = 'none';
+
+  const stopBtn = document.createElement('button');
+  stopBtn.type = 'button';
+  stopBtn.className = 'tts-btn';
+  stopBtn.title = 'Berhenti membaca';
+  stopBtn.textContent = '⏹';
+  stopBtn.style.display = 'none';
+
+  const group = { playBtn, pauseBtn, stopBtn };
+
+  playBtn.addEventListener('click', () => speakText(text, group));
+  pauseBtn.addEventListener('click', () => {
+    if(!window.speechSynthesis.speaking) return;
+    if(window.speechSynthesis.paused){
+      window.speechSynthesis.resume();
+      pauseBtn.textContent = '⏸';
+    }else{
+      window.speechSynthesis.pause();
+      pauseBtn.textContent = '▶';
+    }
+  });
+  stopBtn.addEventListener('click', () => {
+    window.speechSynthesis.cancel();
+    resetTtsGroup(group);
+    currentTtsGroup = null;
+  });
+
+  wrap.appendChild(playBtn);
+  wrap.appendChild(pauseBtn);
+  wrap.appendChild(stopBtn);
+  return wrap;
+}
+
+// --- Voice Note (VN): rekam suara pengguna, transkripsi, lalu kirim ke AI ---
+let voiceModeOn = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordStream = null;
+let recordTimer = null;
+let recordSeconds = 0;
+const micSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+
+const micBtn = document.getElementById('micBtn');
+const recordBar = document.getElementById('recordBar');
+const recordTimeEl = document.getElementById('recordTime');
+const stopRecordBtn = document.getElementById('stopRecordBtn');
+const cancelRecordBtn = document.getElementById('cancelRecordBtn');
+const inputBar = document.getElementById('inputBar');
+const voiceModeBtn = document.getElementById('voiceModeBtn');
+const vmState = document.getElementById('vmState');
+
+if(!micSupported){
+  micBtn.disabled = true;
+  micBtn.title = 'Perekaman suara tidak didukung di browser ini';
+}
+
+voiceModeBtn.addEventListener('click', () => {
+  voiceModeOn = !voiceModeOn;
+  voiceModeBtn.classList.toggle('active', voiceModeOn);
+  vmState.textContent = voiceModeOn ? 'ON' : 'OFF';
+  addMsg('sys', voiceModeOn
+    ? 'Voice Mode aktif — setiap balasan Jin akan otomatis dibacakan sebagai suara.'
+    : 'Voice Mode dimatikan — kembali ke mode obrolan teks biasa (kamu tetap bisa menekan 🔊 secara manual).');
+});
+
+// --- Menu HP: buka/tutup panel Perintah Cepat & Daftar Tugas ---
+const menuBtn = document.getElementById('menuBtn');
+const sidePanel = document.querySelector('.side');
+const drawerBackdrop = document.getElementById('drawerBackdrop');
+
+function openDrawer(){
+  sidePanel.classList.add('open');
+  drawerBackdrop.classList.add('open');
+}
+function closeDrawer(){
+  sidePanel.classList.remove('open');
+  drawerBackdrop.classList.remove('open');
+}
+menuBtn.addEventListener('click', openDrawer);
+drawerBackdrop.addEventListener('click', closeDrawer);
+
+function stopStreamTracks(){
+  if(recordStream){
+    recordStream.getTracks().forEach(t => t.stop());
+    recordStream = null;
+  }
+}
+
+function resetRecordUi(){
+  clearInterval(recordTimer);
+  recordTimer = null;
+  recordSeconds = 0;
+  recordBar.style.display = 'none';
+  inputBar.style.display = 'flex';
+  micBtn.classList.remove('recording');
+}
+
+async function startRecording(){
+  if(!micSupported){
+    addMsg('sys', 'Maaf, browser ini tidak mendukung perekaman suara (MediaRecorder tidak tersedia). Gunakan browser modern seperti Chrome, Edge, atau Safari terbaru.');
+    return;
+  }
+  try{
+    recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }catch(err){
+    console.error('Gagal mengakses mikrofon:', err);
+    if(err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')){
+      addMsg('sys', 'Izin mikrofon ditolak. Aktifkan izin mikrofon untuk situs ini lewat pengaturan browser (ikon gembok di address bar), lalu coba tekan 🎙️ lagi.');
+    }else if(err && err.name === 'NotFoundError'){
+      addMsg('sys', 'Tidak ditemukan mikrofon di perangkat ini.');
+    }else{
+      addMsg('sys', 'Gagal mengakses mikrofon: ' + (err && err.message ? err.message : 'kesalahan tidak diketahui.'));
+    }
+    return;
+  }
+
+  audioChunks = [];
+  let mimeType = '';
+  const preferredTypes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+  for(const t of preferredTypes){
+    if(window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t)){ mimeType = t; break; }
+  }
+
+  try{
+    mediaRecorder = mimeType ? new MediaRecorder(recordStream, { mimeType }) : new MediaRecorder(recordStream);
+  }catch(err){
+    addMsg('sys', 'Gagal memulai perekam suara: ' + err.message);
+    stopStreamTracks();
+    return;
+  }
+
+  mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onerror = (e) => {
+    console.error('Recorder error:', e);
+    addMsg('sys', 'Terjadi kesalahan saat merekam suara. Coba lagi.');
+    stopStreamTracks();
+    resetRecordUi();
+    audioChunks = [];
+  };
+
+  mediaRecorder.start();
+  recordSeconds = 0;
+  recordTimeEl.textContent = '00:00';
+  recordBar.style.display = 'flex';
+  inputBar.style.display = 'none';
+  micBtn.classList.add('recording');
+  recordTimer = setInterval(() => {
+    recordSeconds++;
+    const mm = String(Math.floor(recordSeconds / 60)).padStart(2, '0');
+    const ss = String(recordSeconds % 60).padStart(2, '0');
+    recordTimeEl.textContent = mm + ':' + ss;
+  }, 1000);
+}
+
+function cancelRecording(){
+  if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+    mediaRecorder.onstop = () => {
+      stopStreamTracks();
+      resetRecordUi();
+      audioChunks = [];
+    };
+    mediaRecorder.stop();
+  }else{
+    stopStreamTracks();
+    resetRecordUi();
+    audioChunks = [];
+  }
+}
+
+function stopRecording(){
+  if(!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  const mime = mediaRecorder.mimeType || 'audio/webm';
+  mediaRecorder.onstop = async () => {
+    stopStreamTracks();
+    resetRecordUi();
+    if(audioChunks.length === 0){
+      addMsg('sys', 'Tidak ada suara yang terekam. Coba tekan 🎙️ lagi dan pastikan mikrofon aktif.');
+      return;
+    }
+    const blob = new Blob(audioChunks, { type: mime });
+    audioChunks = [];
+    await sendVoiceNote(blob);
+  };
+  mediaRecorder.stop();
+}
+
+micBtn.addEventListener('click', () => {
+  if(mediaRecorder && mediaRecorder.state === 'recording') return;
+  startRecording();
+});
+cancelRecordBtn.addEventListener('click', cancelRecording);
+stopRecordBtn.addEventListener('click', stopRecording);
+
+async function sendVoiceNote(blob){
+  typing.textContent = 'JIN sedang mentranskripsi suaramu...';
+  statusTxt.textContent = 'transkripsi';
+  micBtn.disabled = true;
+  sendBtn.disabled = true;
+  try{
+    const fd = new FormData();
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+    fd.append('audio', blob, 'voice-note.' + ext);
+
+    const res = await fetch('/api/transcribe', { method: 'POST', body: fd });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error((data && data.error) || 'Gagal mentranskripsi suara.');
+    }
+    const text = (data.text || '').trim();
+    if(!text){
+      addMsg('sys', 'Tidak ada suara yang terdeteksi di rekaman. Coba rekam ulang atau ketik pesanmu.');
+      return;
+    }
+    addMsg('user', text, { viaVoice: true });
+    await callJin(text, { viaVoice: true });
+  }catch(err){
+    console.error('Gagal transkripsi:', err);
+    addMsg('sys', 'Transkripsi suara gagal (' + err.message + '). Kamu tetap bisa mengirim pesan lewat kolom teks di bawah.');
+  }finally{
+    typing.textContent = '';
+    statusTxt.textContent = 'siap';
+    micBtn.disabled = !micSupported;
+    sendBtn.disabled = false;
+  }
+}
+
+// --- Dynamic commands (dari folder commands/ di server) ---
+let dynamicCommands = [];
+async function loadCommands(){
+  try{
+    const r = await fetch('/api/commands');
+    dynamicCommands = await r.json();
+    renderCommandList();
+  }catch(e){
+    console.error('Gagal memuat daftar command:', e);
+  }
+}
+function renderCommandList(){
+  const listEl = document.getElementById('cmdList');
+  dynamicCommands.forEach(c => {
+    const li = document.createElement('li');
+    li.innerHTML = '<code>'+escapeHtml(c.trigger)+' [teks]</code> — '+escapeHtml(c.description);
+    listEl.appendChild(li);
+  });
+}
+loadCommands();
+
+function addVideoMsg(result){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg jin';
+  wrap.innerHTML = '<span class="tag">JIN&gt;</span> Ini video yang kamu minta:';
+  wrap.appendChild(buildVideoCard(result));
+  log.appendChild(wrap);
+  log.scrollTop = log.scrollHeight;
+}
+
+function addVideoCardOnly(result){
+  const card = buildVideoCard(result);
+  log.appendChild(card);
+  log.scrollTop = log.scrollHeight;
+}
+
+function buildVideoCard(result){
+  const card = document.createElement('div');
+  card.className = 'video-card';
+  const titleDiv = document.createElement('div');
+  titleDiv.className = 'vtitle';
+  titleDiv.textContent = result.title || 'Video';
+  const video = document.createElement('video');
+  video.src = result.videoUrl;
+  video.controls = true;
+  const dl = document.createElement('a');
+  dl.className = 'dl';
+  dl.href = result.videoUrl;
+  dl.target = '_blank';
+  dl.rel = 'noopener noreferrer';
+  dl.download = (result.title || 'video') + '.mp4';
+  dl.textContent = 'Buka / Download';
+  card.appendChild(titleDiv);
+  card.appendChild(video);
+  card.appendChild(dl);
+  return card;
+}
+
+function renderTodos(){
+  todosEl.innerHTML = '';
+  if(todos.length === 0){
+    todosEl.innerHTML = '<li class="empty" style="border:none;">Belum ada tugas.</li>';
+    return;
+  }
+  todos.forEach((t, idx) => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span>'+escapeHtml(t)+'</span>';
+    const btn = document.createElement('button');
+    btn.textContent = '✕';
+    btn.onclick = () => { todos.splice(idx,1); renderTodos(); };
+    li.appendChild(btn);
+    todosEl.appendChild(li);
+  });
+}
+renderTodos();
+
+// Safe calculator: only digits, operators, parens, decimal points
+function safeCalc(expr){
+  const cleaned = expr.replace(/\s+/g,'');
+  if(!/^[0-9+\-*/().]+$/.test(cleaned)){
+    return null;
+  }
+  try{
+    // eslint-disable-next-line no-new-func
+    const result = Function('"use strict"; return (' + cleaned + ')')();
+    if (typeof result !== 'number' || !isFinite(result)) return null;
+    return result;
+  }catch(e){
+    return null;
+  }
+}
+
+async function callJin(userText, opts){
+  opts = opts || {};
+  typing.textContent = 'JIN sedang berpikir...';
+  statusTxt.textContent = 'memproses';
+  sendBtn.disabled = true;
+  try{
+    history.push({role:'user', content: userText});
+    // Memanggil backend kita sendiri (server.js), bukan langsung ke Anthropic.
+    // Backend yang menyimpan API key dengan aman dan meneruskan permintaan ini.
+    const response = await fetch('/api/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        system: "Kamu adalah 'Jin', asisten AI bergaya jin/genie dalam terminal hacker hijau. Kepribadianmu ramah, sedikit dramatis ala jin dari lampu ajaib, tapi jawabanmu selalu jujur, akurat, dan berguna — tidak pernah membantu aktivitas ilegal, penipuan, atau social engineering terhadap orang lain. Jawab dalam Bahasa Indonesia, singkat dan jelas, boleh sedikit gaya 'jin' di awal kalimat sesekali tapi jangan berlebihan. Kamu punya kemampuan download video TikTok lewat tool 'download_tiktok'. Kalau user minta download video TikTok tapi belum kasih link, minta link-nya dulu dengan ramah. Begitu user memberi link TikTok yang valid, LANGSUNG panggil tool download_tiktok (jangan tanya-tanya lagi, jangan minta konfirmasi tambahan). Setelah tool berhasil, balas singkat dan antusias, contoh gayanya: 'Oke dapet, bos! Videonya sudah kukirim di bawah ini.' — tanpa menyebutkan link video di teks (videonya akan otomatis tampil sebagai player di bawah pesanmu). Kalau tool gagal, sampaikan apa adanya dan sarankan coba lagi.",
+        messages: history
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error((data && data.error && (data.error.error?.message || JSON.stringify(data.error))) || 'Gagal menghubungi server.');
+    }
+    const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text);
+    const reply = textBlocks.join('\n').trim() || 'Maaf, aku tidak menerima jawaban dari alam gaib (API). Coba lagi.';
+    history.push({role:'assistant', content: reply});
+    const jinDiv = addMsg('jin', reply);
+    if(data.video && data.video.type === 'video'){
+      addVideoCardOnly(data.video);
+    }
+    // Hands-free: kalau pesan ini dikirim lewat VN (rekam suara), balasan SELALU
+    // otomatis dibacakan — tidak perlu nyalain Voice Mode dulu.
+    // Voice Mode manual tetap berlaku juga untuk pesan yang diketik.
+    if((opts.viaVoice || voiceModeOn) && ttsSupported){
+      const playBtn = jinDiv.querySelector('.tts-btn');
+      if(playBtn) playBtn.click();
+    }
+  }catch(err){
+    addMsg('sys', 'Terjadi gangguan sihir (error koneksi): ' + err.message);
+  }finally{
+    typing.textContent = '';
+    statusTxt.textContent = 'siap';
+    sendBtn.disabled = false;
+  }
+}
+
+// --- Deteksi perintah bebas "hapus riwayat chat" (bukan cuma /bersihkan) ---
+// Cocok untuk kalimat seperti:
+//  "jin tolong hapus riwayat chat ini dong", "hapus chat", "clear history",
+//  "bersihkan obrolan kita", "reset percakapan", dst.
+function isDeleteHistoryIntent(text){
+  const t = text.toLowerCase();
+  const actionWords = ['hapus', 'bersihkan', 'bersihin', 'hapusin', 'clear', 'reset', 'kosongkan'];
+  const targetWords = ['riwayat', 'history', 'chat', 'obrolan', 'percakapan', 'log'];
+  const hasAction = actionWords.some(w => t.includes(w));
+  const hasTarget = targetWords.some(w => t.includes(w));
+  return hasAction && hasTarget;
+}
+
+let deleteHistoryPending = false;
+
+function performDeleteHistory(){
+  log.innerHTML = '';
+  history = [];
+  addMsg('sys', 'Riwayat chat sudah dihapus, bos. Kita mulai dari awal lagi.');
+  statusTxt.textContent = 'siap';
+}
+
+async function handleDeleteHistoryRequest(){
+  if(deleteHistoryPending) return; // hindari trigger ganda kalau user spam perintah
+  deleteHistoryPending = true;
+  addMsg('jin', 'Siap bos! 🧞 Riwayat chat ini bakal kuhapus dalam 5 detik...');
+  statusTxt.textContent = 'menghapus riwayat...';
+  sendBtn.disabled = true;
+  let secondsLeft = 5;
+  typing.textContent = 'Menghapus riwayat chat dalam ' + secondsLeft + ' detik...';
+  const countdown = setInterval(() => {
+    secondsLeft -= 1;
+    if(secondsLeft > 0){
+      typing.textContent = 'Menghapus riwayat chat dalam ' + secondsLeft + ' detik...';
+    }
+  }, 1000);
+  setTimeout(() => {
+    clearInterval(countdown);
+    typing.textContent = '';
+    sendBtn.disabled = false;
+    deleteHistoryPending = false;
+    performDeleteHistory();
+  }, 5000);
+}
+
+async function handleInput(){
+  const val = inp.value.trim();
+  if(!val) return;
+  inp.value = '';
+  addMsg('user', val);
+
+  if(val === '/bersihkan'){
+    log.innerHTML = '';
+    history = [];
+    addMsg('sys', 'Obrolan dibersihkan.');
+    return;
+  }
+  if(isDeleteHistoryIntent(val)){
+    await handleDeleteHistoryRequest();
+    return;
+  }
+  if(val.startsWith('/tugas ')){
+    const task = val.slice(7).trim();
+    if(task){
+      todos.push(task);
+      renderTodos();
+      addMsg('jin', 'Baik, tugas "'+task+'" sudah kucatat di gulungan tugas.');
+    }
+    return;
+  }
+  if(val.startsWith('/hitung ')){
+    const expr = val.slice(8).trim();
+    const result = safeCalc(expr);
+    if(result === null){
+      addMsg('jin', 'Ekspresi itu tidak bisa kuhitung. Gunakan angka dan operator +, -, *, /, ( ) saja.');
+    }else{
+      addMsg('jin', expr + ' = ' + result);
+    }
+    return;
+  }
+
+  // Cek apakah ini salah satu command dinamis dari server (mis. /tiktok)
+  const spaceIdx = val.indexOf(' ');
+  const maybeTrigger = spaceIdx === -1 ? val : val.slice(0, spaceIdx);
+  const maybeArgs = spaceIdx === -1 ? '' : val.slice(spaceIdx + 1);
+  const matched = dynamicCommands.find(c => c.trigger === maybeTrigger);
+  if(matched){
+    typing.textContent = 'JIN sedang menjalankan perintah...';
+    statusTxt.textContent = 'memproses';
+    sendBtn.disabled = true;
+    try{
+      const r = await fetch('/api/command', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ trigger: maybeTrigger, args: maybeArgs })
+      });
+      const result = await r.json();
+      if(result.type === 'video'){
+        addVideoMsg(result);
+      }else if(result.type === 'error'){
+        addMsg('sys', result.message);
+      }else{
+        addMsg('jin', result.message || 'Perintah selesai.');
+      }
+    }catch(err){
+      addMsg('sys', 'Gagal menjalankan perintah: ' + err.message);
+    }finally{
+      typing.textContent = '';
+      statusTxt.textContent = 'siap';
+      sendBtn.disabled = false;
+    }
+    return;
+  }
+
+  // default: kirim ke AI untuk obrolan bebas
+  await callJin(val);
+}
+
+sendBtn.addEventListener('click', handleInput);
+inp.addEventListener('keydown', (e) => { if(e.key === 'Enter') handleInput(); });
+// Sebagian browser (terutama Android) menunda event visualViewport saat
+// keyboard baru mulai muncul/hilang — sync ulang beberapa kali sesaat
+// setelah fokus berubah supaya layout pasti tidak "meloncat" atau nyangkut.
+inp.addEventListener('focus', () => { [50,150,300,500].forEach(ms => setTimeout(syncViewport, ms)); });
+inp.addEventListener('blur', () => { [50,150,300,500].forEach(ms => setTimeout(syncViewport, ms)); });
+</script>
+</body>
+</html>
